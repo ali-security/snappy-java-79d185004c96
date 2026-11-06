@@ -33,6 +33,7 @@ javacOptions in doc := {
 
 // Configuration for SnappyHadoopCompatibleOutputStream testing
 fork in Test := true
+javaOptions in Test += "-Xmx4g"
 val libTemp = {
   val path = s"${System.getProperty("java.io.tmpdir")}/snappy_test_${System.currentTimeMillis()}"
   // certain older Linux systems (debian/trusty in Travis CI) requires the libsnappy.so, loaded by
