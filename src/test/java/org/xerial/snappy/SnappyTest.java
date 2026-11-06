@@ -26,6 +26,8 @@ package org.xerial.snappy;
 
 import static org.junit.Assert.*;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
@@ -328,6 +330,151 @@ public class SnappyTest
         catch (IOException e) {
             _logger.debug(e);
         }
+    }
+
+    /*
+
+    Tests happy cases for SnappyInputStream.read method
+    - {0}
+     */
+    @Test
+    public void isValidChunkLengthForSnappyInputStreamIn()
+            throws Exception {
+        byte[] data = {0};
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(data));
+        byte[] out = new byte[50];
+        in.read(out);
+    }
+
+    /*
+    Tests sad cases for SnappyInputStream.read method
+    - Expects a java.lang.NegativeArraySizeException catched into a SnappyError
+    - {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0,(byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff}
+     */
+    @Test(expected = SnappyError.class)
+    public void isInvalidChunkLengthForSnappyInputStreamInNegative()
+            throws Exception {
+        byte[] data = {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0,(byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff};
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(data));
+        byte[] out = new byte[50];
+        in.read(out);
+    }
+
+    /*
+    Tests sad cases for SnappyInputStream.read method
+    - Expects a java.lang.OutOfMemoryError
+    - {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0,(byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff}
+     */
+    @Test(expected = SnappyError.class)
+    public void isInvalidChunkLengthForSnappyInputStreamOutOfMemory()
+            throws Exception {
+        byte[] data = {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff};
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(data));
+        byte[] out = new byte[50];
+        try {
+            in.read(out);
+        } catch (Exception ignored) {
+            // Exception here will be catched
+            // But OutOfMemoryError will not be caught, and will still be thrown
+        }
+    }
+
+    /*
+    Tests sad cases for SnappyInputStream.read method
+    - Expects a failed to compress exception due to upper bounds chunk size
+    - {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0,(byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff}
+     */
+    @Test
+    public void isInvalidChunkLengthForSnappyInputStream()
+            throws Exception {
+        byte[] data = {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0, (byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff};
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(data));
+        byte[] out = new byte[50];
+        try {
+            in.read(out);
+        } catch (SnappyError error) {
+            Assert.assertEquals(error.errorCode, SnappyErrorCode.FAILED_TO_UNCOMPRESS);
+        }
+    }
+
+    private static byte[] snappyStreamWithChunkSize(int chunkSize)
+    {
+        return new byte[] {-126, 'S', 'N', 'A', 'P', 'P', 'Y', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                (byte) (chunkSize >>> 24), (byte) (chunkSize >>> 16), (byte) (chunkSize >>> 8), (byte) chunkSize};
+    }
+
+    /*
+    Tests sad cases for SnappyInputStream.read method
+    - A negative chunk size (0xFFFFFFFF) must be rejected with INVALID_CHUNK_SIZE
+      instead of raising a NegativeArraySizeException
+     */
+    @Test
+    public void isNegativeChunkLengthForSnappyInputStreamRejected()
+            throws Exception {
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(snappyStreamWithChunkSize(-1)));
+        byte[] out = new byte[50];
+        try {
+            in.read(out);
+            fail("negative chunk size must be rejected");
+        } catch (SnappyError error) {
+            assertEquals(SnappyErrorCode.INVALID_CHUNK_SIZE, error.errorCode);
+        }
+    }
+
+    /*
+    Tests sad cases for SnappyInputStream.read method
+    - A chunk size just above MAX_CHUNK_SIZE must be rejected before any buffer is allocated
+     */
+    @Test
+    public void isTooLargeChunkLengthForSnappyInputStreamRejected()
+            throws Exception {
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(snappyStreamWithChunkSize(SnappyInputStream.MAX_CHUNK_SIZE + 1)));
+        byte[] out = new byte[50];
+        try {
+            in.read(out);
+            fail("chunk size larger than MAX_CHUNK_SIZE must be rejected");
+        } catch (SnappyError error) {
+            assertEquals(SnappyErrorCode.FAILED_TO_UNCOMPRESS, error.errorCode);
+        }
+    }
+
+    /*
+    Tests SnappyInputStream with a user-provided maximum chunk size
+    - chunks within the limit are decompressed, larger chunks are rejected
+     */
+    @Test
+    public void isChunkLengthCheckedAgainstConfiguredMaxChunkSize()
+            throws Exception {
+        SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(snappyStreamWithChunkSize(2048)), 1024);
+        byte[] out = new byte[50];
+        try {
+            in.read(out);
+            fail("chunk size larger than the configured max chunk size must be rejected");
+        } catch (SnappyError error) {
+            assertEquals(SnappyErrorCode.FAILED_TO_UNCOMPRESS, error.errorCode);
+        }
+
+        byte[] orig = new byte[4096];
+        for (int i = 0; i < orig.length; i++) {
+            orig[i] = (byte) (i % 7);
+        }
+        ByteArrayOutputStream compressedBuf = new ByteArrayOutputStream();
+        SnappyOutputStream os = new SnappyOutputStream(compressedBuf);
+        os.write(orig);
+        os.close();
+        SnappyInputStream is = new SnappyInputStream(new ByteArrayInputStream(compressedBuf.toByteArray()), 1024 * 1024);
+        byte[] result = new byte[orig.length];
+        int readBytes = 0;
+        while (readBytes < result.length) {
+            int ret = is.read(result, readBytes, result.length - readBytes);
+            if (ret == -1) {
+                break;
+            }
+            readBytes += ret;
+        }
+        is.close();
+        assertEquals(orig.length, readBytes);
+        assertArrayEquals(orig, result);
     }
 
     /*
