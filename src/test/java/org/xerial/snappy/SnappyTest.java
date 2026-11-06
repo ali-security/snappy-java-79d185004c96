@@ -581,4 +581,19 @@ public class SnappyTest
     public void isTooLargeShortArrayInputLength() throws Exception {
         Snappy.compress(new short[Integer.MAX_VALUE / 2 + 1]);
     }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testCompressWithInsufficientBuffer() throws Exception {
+        byte[] incompressible = new byte[1024 * 1024];
+        new java.util.Random(42).nextBytes(incompressible);
+
+        ByteBuffer src = ByteBuffer.allocateDirect(incompressible.length);
+        src.put(incompressible);
+        src.flip();
+
+        ByteBuffer dest = ByteBuffer.allocateDirect(64);
+
+        Snappy.compress(src, dest);
+        fail("Expected IllegalArgumentException but method completed normally");
+    }
 }

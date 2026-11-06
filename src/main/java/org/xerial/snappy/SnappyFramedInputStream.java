@@ -547,6 +547,8 @@ public final class SnappyFramedInputStream
 
             input.position(frameData.offset);
 
+            // uncompressedLength rejects lengths that cannot be produced from the frame size, so the buffers
+            // allocated below stay proportional to the frame actually read
             final int uncompressedLength = Snappy.uncompressedLength(input);
 
             if (uncompressedLength > uncompressedDirect.capacity()) {

@@ -269,7 +269,7 @@ public class SnappyOutputStream
     private boolean hasSufficientOutputBufferFor(int inputSize)
     {
         int maxCompressedSize = Snappy.maxCompressedLength(inputSize);
-        return maxCompressedSize < outputBuffer.length - outputCursor - 4;
+        return maxCompressedSize < outputBuffer.length - outputCursor - blockHeaderSize();
     }
 
     /**
@@ -404,6 +404,10 @@ public class SnappyOutputStream
     protected void writeCurrentDataSize(){
         writeInt(outputBuffer, outputCursor, inputCursor);
         outputCursor += 4;
+    }
+
+    protected int blockHeaderSize(){
+        return 4;
     }
 
     /**
