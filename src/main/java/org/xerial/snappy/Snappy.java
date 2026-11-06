@@ -86,6 +86,11 @@ public class Snappy
     public static void arrayCopy(Object src, int offset, int byteLength, Object dest, int dest_offset)
             throws IOException
     {
+        if (src == null || dest == null) {
+            throw new NullPointerException("src or dest is null");
+        }
+        checkArrayRange(src, offset, byteLength, "src");
+        checkArrayRange(dest, dest_offset, byteLength, "dest");
         impl.arrayCopy(src, offset, byteLength, dest, dest_offset);
     }
 
@@ -574,6 +579,22 @@ public class Snappy
             throw new IllegalArgumentException(String.format(
                     "%s range [offset:%,d, length:%,d] is out of bounds for %s of %,d bytes",
                     name, offset, length, name, size));
+        }
+    }
+
+    /**
+     * Ensures the element range [off, off+len) lies within a typed array of arrayLength elements, and that its byte
+     * offset and length fit in int, before converting them to a byte range.
+     */
+    static void checkElementRange(int arrayLength, int off, int len, int elementSize)
+    {
+        if (off < 0 || len < 0 || off > arrayLength - len) {
+            throw new IndexOutOfBoundsException(String.format(
+                    "range [off:%,d, len:%,d] is out of bounds for array of length %,d", off, len, arrayLength));
+        }
+        if ((long) (off + len) * elementSize > Integer.MAX_VALUE) {
+            throw new SnappyError(SnappyErrorCode.TOO_LARGE_INPUT, String.format(
+                    "byte size of range [off:%,d, len:%,d] exceeds Integer.MAX_VALUE", off, len));
         }
     }
 
