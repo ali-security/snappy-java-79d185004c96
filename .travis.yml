@@ -1,7 +1,3 @@
-branches:
-  only:
-  - master
-
 language: java
 
 jdk:
@@ -9,10 +5,11 @@ jdk:
 
 os: linux
 
-arch:
-  - s390x
-
 script:
 #  - sudo apt-get install -y openjdk-11-jdk;
 #  - export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-s390x && export PATH=$JAVA_HOME/bin:$PATH;
   - ./sbt test
+  - grep -rn -A2 '@Ignore' src/test/java | grep -E '@Ignore|void '
+
+after_script:
+  - sh .travis/wait-for-log.sh
