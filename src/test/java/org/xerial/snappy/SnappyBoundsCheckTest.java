@@ -480,4 +480,124 @@ public class SnappyBoundsCheckTest
         SnappyInputStream in = new SnappyInputStream(new ByteArrayInputStream(compressed.toByteArray()));
         in.read(new long[4], 0x20000000, 1);
     }
+
+    // GHSA-c73m-r934-8qvg: a failed buffer allocation must not lead to releasing the same buffer twice
+    @Test
+    public void framedStreamDoesNotReleaseBuffersTwiceWhenAllocationFails()
+            throws Exception
+    {
+        final java.util.IdentityHashMap<Object, Boolean> released = new java.util.IdentityHashMap<Object, Boolean>();
+        org.xerial.snappy.pool.BufferPool pool = new org.xerial.snappy.pool.BufferPool()
+        {
+            @Override
+            public byte[] allocateArray(int size)
+            {
+                return new byte[size];
+            }
+
+            @Override
+            public void releaseArray(byte[] buffer)
+            {
+                assertNull("array released twice", released.put(buffer, Boolean.TRUE));
+            }
+
+            @Override
+            public ByteBuffer allocateDirect(int size)
+            {
+                if (size > 1024 * 1024) {
+                    throw new OutOfMemoryError("simulated");
+                }
+                return ByteBuffer.allocateDirect(size);
+            }
+
+            @Override
+            public void releaseDirect(ByteBuffer buffer)
+            {
+                assertNull("direct buffer released twice", released.put(buffer, Boolean.TRUE));
+            }
+        };
+
+        // a valid frame whose uncompressed size (2 MiB) exceeds the initial buffers
+        byte[] compressed = Snappy.compress(new byte[2 * 1024 * 1024]);
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        body.write(new byte[4]);
+        body.write(compressed);
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        stream.write(SnappyFramed.HEADER_BYTES);
+        writeChunk(stream, 0x00, body.toByteArray());
+
+        SnappyFramedInputStream in = new SnappyFramedInputStream(
+                java.nio.channels.Channels.newChannel(new ByteArrayInputStream(stream.toByteArray())), false, pool);
+        try {
+            in.read();
+            fail("expected OutOfMemoryError");
+        }
+        catch (OutOfMemoryError e) {
+            // expected
+        }
+        finally {
+            in.close();
+        }
+    }
+
+    // GHSA-c73m-r934-8qvg: a frame larger than the input buffer reallocates all buffers; a failed allocation there
+    // must not lead to releasing the same buffer twice either
+    @Test
+    public void framedStreamDoesNotReleaseBuffersTwiceWhenFrameBufferAllocationFails()
+            throws Exception
+    {
+        final java.util.IdentityHashMap<Object, Boolean> released = new java.util.IdentityHashMap<Object, Boolean>();
+        org.xerial.snappy.pool.BufferPool pool = new org.xerial.snappy.pool.BufferPool()
+        {
+            @Override
+            public byte[] allocateArray(int size)
+            {
+                return new byte[size];
+            }
+
+            @Override
+            public void releaseArray(byte[] buffer)
+            {
+                assertNull("array released twice", released.put(buffer, Boolean.TRUE));
+            }
+
+            @Override
+            public ByteBuffer allocateDirect(int size)
+            {
+                if (size > 1024 * 1024) {
+                    throw new OutOfMemoryError("simulated");
+                }
+                return ByteBuffer.allocateDirect(size);
+            }
+
+            @Override
+            public void releaseDirect(ByteBuffer buffer)
+            {
+                assertNull("direct buffer released twice", released.put(buffer, Boolean.TRUE));
+            }
+        };
+
+        // an uncompressed frame header declaring a 2 MiB frame, which exceeds the initial input buffer
+        int frameLength = 2 * 1024 * 1024;
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        stream.write(SnappyFramed.HEADER_BYTES);
+        stream.write(0x01);
+        stream.write(frameLength & 0xFF);
+        stream.write((frameLength >>> 8) & 0xFF);
+        stream.write((frameLength >>> 16) & 0xFF);
+        stream.write(new byte[16]);
+
+        SnappyFramedInputStream in = new SnappyFramedInputStream(
+                java.nio.channels.Channels.newChannel(new ByteArrayInputStream(stream.toByteArray())), false, pool);
+        try {
+            in.read();
+            fail("expected OutOfMemoryError");
+        }
+        catch (OutOfMemoryError e) {
+            // expected
+        }
+        finally {
+            in.close();
+        }
+    }
 }
